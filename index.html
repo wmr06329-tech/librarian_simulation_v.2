@@ -292,7 +292,7 @@
     <div id="start-modal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center z-[200] p-6">
         <div class="bg-white rounded-[3rem] p-8 md:p-12 max-w-xl w-full text-center shadow-2xl animate__animated animate__bounceInDown">
             <h1 class="text-3xl md:text-5xl font-black mb-2 md:mb-4 title-font text-indigo-600 uppercase tracking-tighter">Pro Librarian</h1>
-            <p class="text-sm md:text-lg font-bold mb-8 text-slate-500"><b>도서부 시뮬레이션</b><br>: 전설의 사서로 거듭나라!</p>
+            <p class="text-sm md:text-lg font-bold mb-8 text-slate-500">2분 동안 정확히 업무를 처리하고<br>'전설의 사서'로 거듭나세요!</p>
             <div class="flex flex-col gap-3">
                 <button onclick="startGame()" class="w-full bg-indigo-600 text-white font-black py-5 rounded-full text-xl md:text-2xl shadow-xl active:scale-95 transition-all">업무 시작</button>
                 <button onclick="toggleInfoModal(true)" class="w-full bg-slate-100 text-slate-600 font-black py-4 rounded-full text-base md:text-lg transition-all">업무 지침서</button>
@@ -326,10 +326,10 @@
                 <section class="bg-rose-50 p-4 md:p-6 rounded-2xl border-2 border-rose-100">
                     <h3 class="text-base font-black text-rose-600 mb-2">🚫 반려 사유 (해당하는 사유를 '모두' 선택해야 성공)</h3>
                     <ul class="space-y-1.5 list-disc pl-4 text-[11px] md:text-xs">
-                        <li><b>🪪 대출증 미소지:</b> 학생이 대출증 없는 경우</li>
+                        <li><b>🪪 대출증 미소지:</b> 대출증 없는 경우</li>
                         <li><b>📅 도서 연체 중:</b> 연체 중인 도서가 있는 경우</li>
                         <li><b>🚫 대출 불가 자료:</b> 잡지, 사전, 만화를 빌리려는 경우</li>
-                        <li><b>📚 대출 한도 초과:</b> 3권 이상의 책을 빌리려는 경우</li>
+                        <li><b>📚 대출 한도 초과:</b> 총 3권 이상의 책을 빌리려는 경우</li>
                     </ul>
                 </section>
 
@@ -358,10 +358,10 @@
 </div>
 
 <script>
-    const NAMES = ["김다현", "김지우", "김나윤", "황혜정", "성유이", "안미경", "김성현", "장하은", "심준희", "이다은", "손호준"];
+    const NAMES = ["조경민", "장훈오", "최윤혁", "김다현", "김지우", "김나윤", "황혜정", "성유이", "안미경", "김성현", "장하은", "심준희", "이다은", "손호준"];
     const AVATARS = ["😖", "😎", "😚", "🤭", "😏", "🤩", "😇", "😐", "😁", "🤗", "🥰", "😘", "😀", "🙄", "😑", "😆", "😷", "😣", "😓", "😉", "😍"];
-    const BOOKS_NORMAL = ["인간 실격", "모순", "강아지똥", "전지적 독자 시점", "바리데기", "소년이 온다", "해리포터", "정의란 무엇인가", "채식주의자", "사피엔스", "1984", "코스모스", "데미안", "멋진 신세계", "불편한 편의점", "긴긴밤", "연금술사", "이기적 유전자", "총 균 쇠", "어린 왕자", "아몬드"];
-    const BOOKS_BAD = ["내셔널 지오그래픽(잡지)", "학교도서관저널(잡지)", "씨네21(잡지)", "자연사백과사전(사전)", "슬램덩크(만화)", "마음의 소리(만화)"];
+    const BOOKS_NORMAL = ["자몽살구클럽", "혼모노", "급류", "이상 전집", "인간 실격", "모순", "강아지똥", "전지적 독자 시점", "바리데기", "소년이 온다", "해리포터", "정의란 무엇인가", "채식주의자", "사피엔스", "1984", "코스모스", "데미안", "5번 레인", "훌훌", "멋진 신세계", "불편한 편의점", "긴긴밤", "연금술사", "이기적 유전자", "총 균 쇠", "어린 왕자", "아몬드"];
+    const BOOKS_BAD = ["내셔널 지오그래픽(잡지)", "더그아웃(잡지)", "학교도서관저널(잡지)", "씨네21(잡지)", "보리 국어사전", "우리나무 백과사전(사전)", "공룡백과사전(사전)", "엣센스 한영사전(사전)", "자연사백과사전(사전)", "슬램덩크 1(만화)", "슬램덩크 2(만화)", "미생 1(만화)", "전지적 독자 시점 1(만화)", "전지적 독자 시점 2(만화)", "미생 2(만화)"];
     const THANKS_MESSAGES = ["수고하세요~", "우와, 감사합니다!", "도서부 최고예요!", "매번 고생 많으세요~", "좋은 하루 되세요~"];
 
     let score = 0, combo = 0, timeLeft = 120, gameActive = false, currentTask = null, queue = [], timerInterval, selectedReasons = new Set();
@@ -554,11 +554,22 @@
     function finalize(action) {
         if(!currentTask) return;
         const p = new Set();
-        if(!currentTask.hasId) p.add('NO_ID');
-        if(currentTask.hasId && currentTask.isLate) p.add('LATE');
+        
+        // 판정 로직 수정: 대출증 미소지 시의 처리
+        if(!currentTask.hasId) {
+            p.add('NO_ID');
+            // 대출증 미소지 시에는 사서가 대출 중인 도서를 볼 수 없으므로 
+            // 현재 들고 있는 책의 권수만으로 대출 한도 초과(3권 이상)를 판정
+            if(currentTask.books.length >= 3) p.add('OVER');
+        } else {
+            // 대출증이 있는 경우 정상적으로 연체 여부와 총 권수 판정
+            if(currentTask.isLate) p.add('LATE');
+            const total = currentTask.loanedBooks.length + currentTask.books.length;
+            if(total >= 3) p.add('OVER');
+        }
+        
+        // 공통: 대출 불가 자료 판정
         if(currentTask.hasRestricted) p.add('RESTRICTED');
-        const total = currentTask.loanedBooks.length + currentTask.books.length;
-        if(total >= 3) p.add('OVER');
 
         let success = false;
         if(action === 'approve') {
