@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>도서부 시뮬레이션: 프로 사서 도전기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
+        
+        body { 
+            font-family: 'Noto Sans KR', sans-serif; 
+            background: #eef2f7;
+            overflow: hidden;
+            touch-action: manipulation; /* 더블탭 확대 방지 */
+        }
+
+        .title-font { font-family: 'Black Han Sans', sans-serif; }
+
+        .scanner-line {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: rgba(79, 70, 229, 0.6);
+            box-shadow: 0 0 15px 5px rgba(79, 70, 229, 0.5);
+            top: 0;
+            z-index: 60;
+            display: none;
+            pointer-events: none;
+        }
+
+        @keyframes scan {
+            from { top: 0; }
+            to { top: 100%; }
+        }
+
+        .shake-screen {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            border: 8px solid #f43f5e !important;
+        }
+
+        .success-flash {
+            animation: success-pulse 0.6s ease-out both;
+            border: 8px solid #10b981 !important;
+        }
+
+        @keyframes success-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.01); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+            40%, 60% { transform: translate3d(8px, 0, 0); }
+        }
+
+        .deny-reason-btn.selected {
+            background-color: #4f46e5 !important;
+            color: white !important;
+            border-color: #4338ca !important;
+            transform: scale(0.98);
+        }
+
+        #fail-overlay, #success-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 300;
+            pointer-events: none;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #fail-overlay { background: rgba(244, 63, 94, 0.2); }
+        #success-overlay { background: rgba(16, 185, 129, 0.2); }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        .pulse-red {
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+        }
+
+        .bubble-pop {
+            animation: bounceIn 0.5s;
+        }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 768px) {
+            .mobile-hide { display: none; }
+            #customer-queue {
+                display: flex;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding-bottom: 8px;
+                gap: 8px;
+                max-height: none;
+            }
+            #customer-queue > div {
+                min-width: 140px;
+                flex-shrink: 0;
+                padding: 12px;
+            }
+            #main-desk {
+                min-height: auto;
+                flex: 1;
+            }
+            .title-responsive { font-size: 1.25rem; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 select-none h-screen flex flex-col">
+
+<div id="fail-overlay" class="animate__animated animate__fadeIn">
+    <div class="text-[120px] md:text-[200px] text-rose-600 font-black drop-shadow-2xl">❌</div>
+</div>
+<div id="success-overlay" class="animate__animated animate__fadeIn">
+    <div class="text-[120px] md:text-[200px] text-emerald-500 font-black drop-shadow-2xl">✅</div>
+</div>
+
+<div id="app" class="max-w-6xl mx-auto p-2 md:p-6 w-full h-full flex flex-col overflow-hidden">
+    <!-- Header -->
+    <header class="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-6 items-center shrink-0">
+        <div class="bg-white p-2 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border border-slate-200 flex items-center gap-2 md:gap-4">
+            <div class="bg-indigo-600 text-white w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-2xl shadow-lg">🏆</div>
+            <div class="min-w-0">
+                <div class="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate">현재 등급</div>
+                <div id="rank-name" class="text-xs md:text-lg font-black text-indigo-600 title-font truncate">견습 사서</div>
+            </div>
+        </div>
+        <div class="bg-white p-2 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center relative overflow-hidden">
+            <div class="text-[8px] md:text-[10px] font-bold text-slate-400 uppercase mb-0.5">도서관 명성치</div>
+            <div id="score" class="text-xl md:text-3xl font-black text-slate-800 title-font tracking-wider">0</div>
+            <div id="combo-display" class="absolute right-2 top-1 text-orange-500 font-black italic hidden text-[10px] md:text-sm animate__animated animate__bounceIn">0 COMBO!</div>
+        </div>
+        <div class="col-span-2 md:col-span-1 bg-white p-2 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border border-slate-200 flex items-center gap-4">
+            <div class="flex-grow">
+                <div class="flex justify-between text-[8px] md:text-[10px] font-black text-slate-400 mb-1 uppercase">
+                    <span>업무 종료까지</span>
+                    <span id="timer-text">02:00</span>
+                </div>
+                <div class="w-full bg-slate-100 h-2 md:h-3 rounded-full overflow-hidden border border-slate-200">
+                    <div id="timer-bar" class="bg-rose-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-6 flex-grow overflow-hidden">
+        <!-- Queue Area -->
+        <div class="md:col-span-3 flex flex-col shrink-0 overflow-hidden">
+            <h2 class="title-font text-base md:text-xl mb-2 md:mb-4 flex items-center gap-2 px-1">
+                <span class="text-indigo-500">●</span> <span class="mobile-hide">대기 중인 </span>이용자
+            </h2>
+            <div id="customer-queue" class="custom-scrollbar pr-1"></div>
+            
+            <div class="mt-2 px-1 mobile-hide">
+                <button onclick="confirmRestart()" class="w-full bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-600 font-black py-3 rounded-2xl transition-all flex items-center justify-center gap-2 border border-slate-300 shadow-sm text-sm">
+                    🔄 재시작
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Desk Area -->
+        <div class="md:col-span-9 flex flex-col flex-grow overflow-hidden">
+            <div id="main-desk" class="bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl border-2 md:border-4 border-white ring-1 ring-slate-200 relative overflow-hidden flex flex-col transition-all duration-300">
+                <div id="scanner-line" class="scanner-line"></div>
+                
+                <!-- Idle State -->
+                <div id="lobby-state" class="flex-grow flex flex-col items-center justify-center p-6 md:p-12 text-center animate__animated animate__fadeIn">
+                    <div class="w-20 h-20 md:w-32 md:h-32 bg-indigo-50 rounded-[2rem] flex items-center justify-center mb-6 rotate-6 border-2 border-indigo-100">
+                        <span class="text-4xl md:text-6xl">📖</span>
+                    </div>
+                    <h3 class="text-xl md:text-3xl font-black mb-2 title-font tracking-tight text-indigo-900">업무 대기 중</h3>
+                    <p class="text-xs md:text-slate-400 font-medium mb-4">대기열에서 이용자를 선택하세요.</p>
+                    <button onclick="confirmRestart()" class="md:hidden bg-slate-100 text-slate-500 font-bold px-4 py-2 rounded-xl text-xs">🔄 업무 재시작</button>
+                </div>
+
+                <!-- Active Work Area -->
+                <div id="work-area" class="hidden flex-grow flex flex-col animate__animated animate__fadeIn overflow-hidden">
+                    <!-- Character Section -->
+                    <div class="relative shrink-0 h-32 md:h-48 bg-gradient-to-b from-slate-50 to-white flex flex-col items-center justify-end pb-2 md:pb-4 pt-2">
+                        <div class="absolute top-2 w-full max-w-xs px-4 z-20">
+                            <div id="speech-bubble" class="bg-white p-2 md:p-3 rounded-2xl md:rounded-3xl shadow-xl border border-indigo-50 text-center font-bold text-slate-700 text-[10px] md:text-sm transition-all duration-300 leading-tight"></div>
+                        </div>
+                        <div id="char-container" class="w-20 h-20 md:w-32 md:h-32 bg-white rounded-full flex items-center justify-center text-4xl md:text-6xl shadow-xl border-2 md:border-4 border-white"></div>
+                    </div>
+
+                    <!-- User Info Section -->
+                    <div id="user-info-bar" class="shrink-0 px-4 py-3 bg-slate-900 text-white flex flex-col gap-1.5 mx-3 md:mx-6 rounded-2xl shadow-inner transition-all duration-500 opacity-0 mb-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="bg-white/20 p-1.5 rounded-lg text-[10px]">🪪</div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="info-name" class="font-black text-xs md:text-sm">???</span>
+                                        <span class="text-[8px] bg-indigo-500 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-widest">Student Info</span>
+                                    </div>
+                                    <div id="info-status" class="text-[8px] text-slate-400 font-bold">인증 대기 중...</div>
+                                </div>
+                            </div>
+                            <div id="info-warning" class="hidden animate__animated animate__headShake animate__infinite">
+                                <span class="bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-lg border border-rose-400 tracking-tighter">⚠️ 연체 도서 보유</span>
+                            </div>
+                        </div>
+                        <div id="loaned-books-container" class="border-t border-white/10 pt-1.5 flex flex-wrap gap-1.5 overflow-hidden">
+                            <div id="loaned-books-list" class="flex flex-wrap gap-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Processing Section -->
+                    <div class="px-4 md:px-8 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 overflow-y-auto flex-grow custom-scrollbar pb-2">
+                        <div class="space-y-2 md:space-y-4">
+                            <h4 class="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">1. Identification</h4>
+                            <div id="id-card-visual" class="relative bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl md:rounded-3xl p-4 md:p-5 text-white shadow-lg h-28 md:h-40 flex flex-col justify-between overflow-hidden">
+                                <div class="flex justify-between items-start">
+                                    <div class="space-y-0.5">
+                                        <div class="text-[7px] md:text-[8px] opacity-60 font-bold uppercase tracking-widest">Library Access Pass</div>
+                                        <div class="text-sm md:text-base font-black title-font" id="id-card-text">???</div>
+                                    </div>
+                                    <div class="w-6 h-6 md:w-8 md:h-8 bg-white/20 rounded-lg flex items-center justify-center text-sm md:text-lg">👤</div>
+                                </div>
+                                <button id="btn-scan-id" onclick="handleIdScan()" class="w-full bg-white text-indigo-600 font-black py-2 md:py-3 rounded-xl text-[9px] md:text-[10px] shadow-lg active:scale-95 transition-transform">대출증 스캔</button>
+                                <div id="no-id-overlay" class="hidden absolute inset-0 bg-rose-500/95 flex items-center justify-center p-4 text-center z-10 backdrop-blur-sm">
+                                    <p class="font-black text-xs md:text-sm text-white">"앗... 저 오늘<br>대출증을 두고 왔어요!"</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="book-section" class="space-y-2 md:space-y-4">
+                            <h4 class="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Book Processing</h4>
+                            <div id="book-list" class="space-y-2 max-h-48 md:max-h-none overflow-y-visible"></div>
+                        </div>
+                    </div>
+
+                    <!-- Decision Buttons -->
+                    <div class="p-3 md:p-6 bg-slate-50 border-t border-slate-100 flex gap-2 md:gap-4 shrink-0">
+                        <button onclick="finalize('approve')" class="flex-[2] bg-indigo-600 text-white font-black py-4 md:py-5 rounded-2xl md:rounded-[1.5rem] shadow-lg active:scale-95 transition flex items-center justify-center gap-2">
+                            <span class="text-sm md:text-lg">✅</span> <span class="text-sm md:text-base">승인</span>
+                        </button>
+                        <button onclick="toggleDenyModal(true)" class="flex-1 bg-white text-rose-500 font-black py-4 md:py-5 rounded-2xl md:rounded-[1.5rem] border-2 border-slate-200 active:scale-95 transition flex items-center justify-center gap-2">
+                            <span class="text-sm md:text-lg">🚫</span> <span class="text-sm md:text-base">반려</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="restart-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden items-center justify-center z-[300] p-6">
+        <div class="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl animate__animated animate__fadeInUp border-4 border-rose-400 text-center">
+            <h3 class="text-xl md:text-2xl font-black title-font mb-3">정말 재시작할까요?</h3>
+            <p class="text-slate-500 text-xs md:text-sm mb-6 font-medium leading-tight">현재 진행 중인 모든 명성치와<br>콤보가 초기화됩니다.</p>
+            <div class="flex gap-3">
+                <button onclick="toggleRestartModal(false)" class="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl text-sm">취소</button>
+                <button onclick="location.reload()" class="flex-1 bg-rose-500 text-white font-black py-4 rounded-2xl shadow-lg text-sm">재시작</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deny-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden items-center justify-center z-[150] p-4">
+        <div class="bg-white rounded-[2.5rem] p-6 md:p-8 max-w-sm w-full shadow-2xl animate__animated animate__zoomIn border-4 border-rose-500">
+            <div class="text-center mb-4">
+                <div class="w-12 h-12 md:w-16 md:h-16 bg-rose-100 text-rose-500 rounded-2xl flex items-center justify-center text-2xl md:text-3xl mx-auto mb-3 pulse-red">⚠️</div>
+                <h3 class="text-lg md:text-xl font-black title-font text-rose-600">반려 사유 "모두" 선택</h3>
+                <p class="text-[10px] text-rose-700 font-black mt-1 italic">해당되는 모든 조건을 체크하세요!</p>
+            </div>
+            <div id="reason-container" class="grid grid-cols-1 gap-2">
+                <button onclick="toggleReason('NO_ID')" id="REASON_NO_ID" class="deny-reason-btn p-3 text-left rounded-xl md:rounded-2xl border-2 border-slate-100 transition font-bold text-[11px] md:text-xs">🪪 대출증 미소지</button>
+                <button onclick="toggleReason('LATE')" id="REASON_LATE" class="deny-reason-btn p-3 text-left rounded-xl md:rounded-2xl border-2 border-slate-100 transition font-bold text-[11px] md:text-xs">📅 도서 연체 중</button>
+                <button onclick="toggleReason('RESTRICTED')" id="REASON_RESTRICTED" class="deny-reason-btn p-3 text-left rounded-xl md:rounded-2xl border-2 border-slate-100 transition font-bold text-[11px] md:text-xs">🚫 대출 불가 자료</button>
+                <button onclick="toggleReason('OVER')" id="REASON_OVER" class="deny-reason-btn p-3 text-left rounded-xl md:rounded-2xl border-2 border-slate-100 transition font-bold text-[11px] md:text-xs">📚 대출 한도 초과</button>
+            </div>
+            <div class="flex gap-2 mt-5">
+                <button onclick="toggleDenyModal(false)" class="flex-1 text-slate-400 font-bold py-3 text-xs bg-slate-50 rounded-xl">취소</button>
+                <button onclick="finalize('deny')" class="flex-[2] bg-rose-500 text-white font-black py-3 rounded-xl shadow-lg active:scale-95">반려 확정</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="start-modal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center z-[200] p-6">
+        <div class="bg-white rounded-[3rem] p-8 md:p-12 max-w-xl w-full text-center shadow-2xl animate__animated animate__bounceInDown">
+            <h1 class="text-3xl md:text-5xl font-black mb-2 md:mb-4 title-font text-indigo-600 uppercase tracking-tighter">Pro Librarian</h1>
+            <p class="text-sm md:text-lg font-bold mb-8 text-slate-500"><b>도서부 시뮬레이션</b><br>: 전설의 사서로 거듭나라!</p>
+            <div class="flex flex-col gap-3">
+                <button onclick="startGame()" class="w-full bg-indigo-600 text-white font-black py-5 rounded-full text-xl md:text-2xl shadow-xl active:scale-95 transition-all">업무 시작</button>
+                <button onclick="toggleInfoModal(true)" class="w-full bg-slate-100 text-slate-600 font-black py-4 rounded-full text-base md:text-lg transition-all">업무 지침서</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="info-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden items-center justify-center z-[250] p-4">
+        <div class="bg-white rounded-[2.5rem] p-6 md:p-10 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl animate__animated animate__fadeInUp overflow-hidden">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h2 class="text-2xl md:text-3xl font-black title-font text-indigo-600">📖 업무 지침서</h2>
+                <button onclick="toggleInfoModal(false)" class="text-slate-300 hover:text-slate-600 text-2xl">✕</button>
+            </div>
+            
+            <div class="overflow-y-auto custom-scrollbar pr-2 space-y-6 text-slate-600 font-medium leading-snug text-xs md:text-sm">
+                <section>
+                    <h3 class="text-base font-black text-indigo-600 mb-1">🎯 게임 목적</h3>
+                    <p>2분 동안 학생들의 요청을 정확히 처리하여 도서관의 명성을 쌓으세요.</p>
+                </section>
+
+                <section>
+                    <h3 class="text-base font-black text-indigo-600 mb-1">🔄 업무 순서</h3>
+                    <ol class="space-y-2 list-decimal pl-4">
+                        <li><b>이용자 선택:</b> 대기열에서 학생 터치하여 데스크로 호출</li>
+                        <li><b>대출증 확인:</b> 대출증을 스캔하여 학생 정보 확인 (반납은 제외)</li>
+                        <li><b>도서 처리:</b> 도서 목록을 터치하여 스캔</li>
+                        <li><b>최종 판정:</b> 문제 없으면 [승인], 결격 사유 있으면 [반려]</li>
+                    </ol>
+                </section>
+
+                <section class="bg-rose-50 p-4 md:p-6 rounded-2xl border-2 border-rose-100">
+                    <h3 class="text-base font-black text-rose-600 mb-2">🚫 반려 사유 (해당하는 사유를 '모두' 선택해야 성공)</h3>
+                    <ul class="space-y-1.5 list-disc pl-4 text-[11px] md:text-xs">
+                        <li><b>🪪 대출증 미소지:</b> 학생이 대출증 없는 경우</li>
+                        <li><b>📅 도서 연체 중:</b> 연체 중인 도서가 있는 경우</li>
+                        <li><b>🚫 대출 불가 자료:</b> 잡지, 사전, 만화를 빌리려는 경우</li>
+                        <li><b>📚 대출 한도 초과:</b> 3권 이상의 책을 빌리려는 경우</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3 class="text-lg font-black text-indigo-600 mb-2">📈 점수 및 등급</h3>
+                    <ul class="text-xs space-y-2 list-disc pl-4">
+                        <li><b>성공:</b> 기본 150점 + 콤보 보너스</li>
+                        <li><b>실패:</b> -300점 감점 및 콤보 초기화</li>
+                    </ul>
+                </section>
+
+            </div>
+            <div class="mt-6 shrink-0">
+                <button onclick="toggleInfoModal(false)" class="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95">숙지 완료</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="result-modal" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md hidden items-center justify-center z-[200] p-6">
+        <div class="bg-white rounded-[3rem] p-10 max-w-lg w-full text-center shadow-2xl animate__animated animate__zoomIn">
+            <div id="final-rank" class="text-indigo-600 font-black title-font text-2xl md:text-3xl">결과 확인 중</div>
+            <div id="final-score" class="text-6xl md:text-8xl font-black text-slate-900 my-4 md:my-6 tracking-tighter">0</div>
+            <button onclick="location.reload()" class="w-full bg-slate-900 text-white font-black py-5 md:py-6 rounded-full text-lg md:text-xl shadow-xl active:scale-95">재도전</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const NAMES = ["김다현", "김지우", "김나윤", "황혜정", "성유이", "안미경", "김성현", "장하은", "심준희", "이다은", "손호준"];
+    const AVATARS = ["😖", "😎", "😚", "🤭", "😏", "🤩", "😇", "😐", "😁", "🤗", "🥰", "😘", "😀", "🙄", "😑", "😆", "😷", "😣", "😓", "😉", "😍"];
+    const BOOKS_NORMAL = ["인간 실격", "모순", "강아지똥", "전지적 독자 시점", "바리데기", "소년이 온다", "해리포터", "정의란 무엇인가", "채식주의자", "사피엔스", "1984", "코스모스", "데미안", "멋진 신세계", "불편한 편의점", "긴긴밤", "연금술사", "이기적 유전자", "총 균 쇠", "어린 왕자", "아몬드"];
+    const BOOKS_BAD = ["내셔널 지오그래픽(잡지)", "학교도서관저널(잡지)", "씨네21(잡지)", "자연사백과사전(사전)", "슬램덩크(만화)", "마음의 소리(만화)"];
+    const THANKS_MESSAGES = ["수고하세요~", "우와, 감사합니다!", "도서부 최고예요!", "매번 고생 많으세요~", "좋은 하루 되세요~"];
+
+    let score = 0, combo = 0, timeLeft = 120, gameActive = false, currentTask = null, queue = [], timerInterval, selectedReasons = new Set();
+
+    const dom = {
+        queue: document.getElementById('customer-queue'),
+        score: document.getElementById('score'),
+        timerText: document.getElementById('timer-text'),
+        timerBar: document.getElementById('timer-bar'),
+        rank: document.getElementById('rank-name'),
+        combo: document.getElementById('combo-display'),
+        charAvatar: document.getElementById('char-container'),
+        speech: document.getElementById('speech-bubble'),
+        idVisual: document.getElementById('id-card-visual'),
+        idText: document.getElementById('id-card-text'),
+        noIdOverlay: document.getElementById('no-id-overlay'),
+        infoBar: document.getElementById('user-info-bar'),
+        infoName: document.getElementById('info-name'),
+        infoStatus: document.getElementById('info-status'),
+        infoWarning: document.getElementById('info-warning'),
+        bookList: document.getElementById('book-list'),
+        denyModal: document.getElementById('deny-modal'),
+        infoModal: document.getElementById('info-modal'),
+        restartModal: document.getElementById('restart-modal'),
+        scanner: document.getElementById('scanner-line'),
+        lobby: document.getElementById('lobby-state'),
+        workArea: document.getElementById('work-area'),
+        mainDesk: document.getElementById('main-desk'),
+        failOverlay: document.getElementById('fail-overlay'),
+        successOverlay: document.getElementById('success-overlay'),
+        loanedList: document.getElementById('loaned-books-list')
+    };
+
+    function spawnCustomer() {
+        if (queue.length >= 4) return;
+        const isBorrow = Math.random() < 0.7;
+        const noId = isBorrow && Math.random() < 0.2;
+        
+        const existingLoanCount = Math.floor(Math.random() * 3); 
+        const loanedBooks = [];
+        let hasLatePenalty = false;
+        for(let i=0; i<existingLoanCount; i++) {
+            const isLate = Math.random() < 0.3;
+            if(isLate) hasLatePenalty = true;
+            loanedBooks.push({ title: BOOKS_NORMAL[Math.floor(Math.random()*BOOKS_NORMAL.length)], status: isLate ? '연체중' : '정상대출중' });
+        }
+
+        const requestedBooks = [];
+        let hasRestricted = false;
+
+        if (!isBorrow) {
+            const count = loanedBooks.length > 0 ? Math.floor(Math.random() * loanedBooks.length) + 1 : 1;
+            for(let i=0; i<count; i++) {
+                const source = loanedBooks.length > 0 ? loanedBooks[i].title : BOOKS_NORMAL[0];
+                requestedBooks.push({ title: source, bad: false });
+            }
+        } else {
+            const count = Math.floor(Math.random() * 3) + 1;
+            for(let i=0; i<count; i++) {
+                const restricted = Math.random() < 0.2;
+                if(restricted) { 
+                    requestedBooks.push({ title: BOOKS_BAD[Math.floor(Math.random()*BOOKS_BAD.length)], bad: true }); 
+                    hasRestricted = true; 
+                } else { 
+                    requestedBooks.push({ title: BOOKS_NORMAL[Math.floor(Math.random()*BOOKS_NORMAL.length)], bad: false }); 
+                }
+            }
+        }
+
+        queue.push({
+            id: Math.random().toString(36).substr(2, 5),
+            name: NAMES[Math.floor(Math.random()*NAMES.length)],
+            avatar: AVATARS[Math.floor(Math.random()*AVATARS.length)],
+            type: isBorrow ? '대출' : '반납',
+            loanedBooks: loanedBooks,
+            isLate: hasLatePenalty,
+            hasId: !noId,
+            books: requestedBooks,
+            hasRestricted: hasRestricted,
+            scannedId: false,
+            scannedBooks: []
+        });
+        renderQueue();
+    }
+
+    function renderQueue() {
+        dom.queue.innerHTML = '';
+        queue.forEach(c => {
+            const div = document.createElement('div');
+            const isSelected = currentTask && currentTask.id === c.id;
+            div.className = `p-3 md:p-4 bg-white rounded-2xl md:rounded-3xl border-2 shadow-sm cursor-pointer transition-all animate__animated animate__fadeInUp flex items-center gap-3 md:gap-4 shrink-0 ${isSelected ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-slate-100'}`;
+            div.onclick = () => selectCustomer(c.id);
+            div.innerHTML = `
+                <div class="text-xl md:text-2xl">${c.avatar}</div>
+                <div class="flex-grow min-w-0">
+                    <div class="text-[8px] md:text-[10px] font-black ${c.type==='대출'?'text-indigo-600':'text-amber-500'} uppercase">${c.type}</div>
+                    <div class="text-[10px] md:text-[11px] font-bold text-slate-400 truncate">대기 중인 이용자</div>
+                </div>`;
+            dom.queue.appendChild(div);
+        });
+    }
+
+    function selectCustomer(id) {
+        if(!gameActive) return;
+        currentTask = queue.find(c => c.id === id);
+        currentTask.scannedId = false;
+        currentTask.scannedBooks = [];
+        selectedReasons.clear();
+        updateReasonUI();
+        renderQueue();
+        
+        dom.lobby.classList.add('hidden');
+        dom.workArea.classList.remove('hidden');
+        dom.charAvatar.innerText = currentTask.avatar;
+        dom.infoBar.style.opacity = '0';
+        dom.speech.innerText = currentTask.type === '대출' ? "안녕하세요, 이 책들 대출 가능할까요?" : "다 읽은 책 반납하러 왔습니다!";
+        dom.speech.classList.remove('bubble-pop');
+        dom.idText.innerText = "STUDENT PASS";
+        dom.loanedList.innerHTML = '';
+        
+        if (currentTask.type === '반납') {
+            dom.idVisual.classList.add('hidden');
+            currentTask.scannedId = true; 
+            revealInfo();
+        } else {
+            dom.idVisual.classList.remove('hidden');
+            dom.noIdOverlay.classList.toggle('hidden', currentTask.hasId);
+            document.getElementById('btn-scan-id').innerText = "대출증 스캔";
+        }
+        renderBooks();
+    }
+
+    function handleIdScan() {
+        if (!currentTask || currentTask.scannedId) return;
+        playScanAnim();
+        currentTask.scannedId = true;
+        revealInfo();
+        document.getElementById('btn-scan-id').innerText = "스캔 완료";
+        dom.idText.innerText = currentTask.name;
+    }
+
+    function revealInfo() {
+        dom.infoBar.style.opacity = '1';
+        dom.infoName.innerText = currentTask.name;
+        dom.infoStatus.innerText = currentTask.isLate ? "⚠️ 대출 불가능 (연체)" : "정상 상태";
+        dom.infoWarning.classList.toggle('hidden', !currentTask.isLate);
+        dom.loanedList.innerHTML = '';
+        if(currentTask.loanedBooks.length === 0) {
+            dom.loanedList.innerHTML = '<span class="text-[8px] md:text-[9px] text-white/30 italic">대출 중인 도서 없음</span>';
+        } else {
+            currentTask.loanedBooks.forEach(b => {
+                const badge = document.createElement('span');
+                badge.className = `text-[7px] md:text-[8px] px-1.5 py-0.5 rounded-lg border font-bold ${b.status === '연체중' ? 'bg-rose-900/50 border-rose-500 text-rose-200' : 'bg-slate-800 border-slate-600 text-slate-300'}`;
+                badge.innerHTML = `${b.title} <span class="${b.status === '연체중' ? 'text-rose-400' : 'text-emerald-400'} ml-1">[${b.status}]</span>`;
+                dom.loanedList.appendChild(badge);
+            });
+        }
+    }
+
+    function renderBooks() {
+        if(!currentTask) return;
+        dom.bookList.innerHTML = '';
+        currentTask.books.forEach((b, i) => {
+            const ok = currentTask.scannedBooks.includes(i);
+            const div = document.createElement('div');
+            div.className = `p-3 md:p-4 rounded-xl md:rounded-2xl border-2 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all ${ok?'bg-emerald-50 border-emerald-400':'bg-white border-slate-100 shadow-sm'}`;
+            div.onclick = () => toggleScanBook(i);
+            div.innerHTML = `<span class="text-[10px] md:text-[11px] font-black text-slate-700">${b.title}</span><span class="text-[9px] md:text-[10px] font-black ${ok?'text-emerald-500':'text-indigo-300'}">${ok?'[완료]':'[터치스캔]'}</span>`;
+            dom.bookList.appendChild(div);
+        });
+    }
+
+    function toggleScanBook(i) {
+        if(currentTask.type === '대출' && !currentTask.scannedId) {
+            dom.speech.innerText = "대출증을 먼저 스캔해 주세요!";
+            return;
+        }
+        const idx = currentTask.scannedBooks.indexOf(i);
+        if (idx > -1) currentTask.scannedBooks.splice(idx, 1);
+        else { playScanAnim(); currentTask.scannedBooks.push(i); }
+        renderBooks();
+    }
+
+    function playScanAnim() {
+        dom.scanner.style.display = 'block';
+        dom.scanner.style.animation = 'scan 0.3s ease-in-out';
+        setTimeout(() => { dom.scanner.style.display = 'none'; dom.scanner.style.animation = ''; }, 300);
+    }
+
+    function finalize(action) {
+        if(!currentTask) return;
+        const p = new Set();
+        if(!currentTask.hasId) p.add('NO_ID');
+        if(currentTask.hasId && currentTask.isLate) p.add('LATE');
+        if(currentTask.hasRestricted) p.add('RESTRICTED');
+        const total = currentTask.loanedBooks.length + currentTask.books.length;
+        if(total >= 3) p.add('OVER');
+
+        let success = false;
+        if(action === 'approve') {
+            if(currentTask.scannedBooks.length === currentTask.books.length && (currentTask.type === '반납' || (currentTask.scannedId && p.size === 0))) success = true;
+        } else {
+            if(currentTask.type === '대출' && p.size > 0 && p.size === selectedReasons.size && [...p].every(r => selectedReasons.has(r))) success = true;
+        }
+
+        if(success) {
+            combo++; score += Math.floor(150 * (1 + combo * 0.1));
+            dom.mainDesk.classList.add('success-flash');
+            dom.successOverlay.style.display = 'flex';
+            dom.speech.innerText = THANKS_MESSAGES[Math.floor(Math.random()*THANKS_MESSAGES.length)];
+            dom.speech.classList.add('bubble-pop');
+            queue = queue.filter(c => c.id !== currentTask.id);
+            setTimeout(() => {
+                dom.mainDesk.classList.remove('success-flash');
+                dom.successOverlay.style.display = 'none';
+                currentTask = null;
+                dom.workArea.classList.add('hidden');
+                dom.lobby.classList.remove('hidden');
+                renderQueue();
+            }, 800);
+        } else {
+            combo = 0; score = Math.max(0, score - 300);
+            dom.mainDesk.classList.add('shake-screen');
+            dom.failOverlay.style.display = 'flex';
+            setTimeout(() => {
+                dom.mainDesk.classList.remove('shake-screen');
+                dom.failOverlay.style.display = 'none';
+            }, 600);
+        }
+        updateHUD(); toggleDenyModal(false);
+    }
+
+    function toggleReason(reason) {
+        selectedReasons.has(reason) ? selectedReasons.delete(reason) : selectedReasons.add(reason);
+        updateReasonUI();
+    }
+
+    function updateReasonUI() {
+        document.querySelectorAll('.deny-reason-btn').forEach(btn => btn.classList.toggle('selected', selectedReasons.has(btn.id.replace('REASON_', ''))));
+    }
+
+    function updateHUD() {
+        dom.score.innerText = score.toLocaleString();
+        dom.combo.innerText = `${combo} COMBO!`;
+        dom.combo.classList.toggle('hidden', combo < 2);
+        const ranks = [{min:0,t:"견습 사서"},{min:800,t:"정식 사서"},{min:2000,t:"베테랑 사서"},{min:4000,t:"전설의 사서"}];
+        dom.rank.innerText = [...ranks].reverse().find(r => score >= r.min).t;
+    }
+
+    function startGame() {
+        document.getElementById('start-modal').classList.add('hidden');
+        gameActive = true; score = 0; combo = 0; timeLeft = 120;
+        updateHUD();
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            dom.timerText.innerText = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
+            dom.timerBar.style.width = `${(timeLeft/120)*100}%`;
+            if(timeLeft <= 0) {
+                gameActive = false;
+                clearInterval(timerInterval);
+                document.getElementById('result-modal').classList.remove('hidden');
+                document.getElementById('result-modal').classList.add('flex');
+                document.getElementById('final-score').innerText = score.toLocaleString();
+                document.getElementById('final-rank').innerText = dom.rank.innerText;
+            }
+        }, 1000);
+        for(let i=0; i<4; i++) spawnCustomer();
+    }
+
+    function toggleDenyModal(show) { 
+        if(show) { selectedReasons.clear(); updateReasonUI(); }
+        dom.denyModal.classList.toggle('hidden', !show); 
+        dom.denyModal.classList.toggle('flex', show); 
+    }
+    function toggleInfoModal(show) { dom.infoModal.classList.toggle('hidden', !show); dom.infoModal.classList.toggle('flex', show); }
+    function toggleRestartModal(show) { dom.restartModal.classList.toggle('hidden', !show); dom.restartModal.classList.toggle('flex', show); }
+    function confirmRestart() { if (gameActive) toggleRestartModal(true); }
+
+    setInterval(() => { if(gameActive && queue.length < 4) spawnCustomer(); }, 4000);
+    
+    window.addEventListener('keydown', (e) => {
+        if(!gameActive || !currentTask) return;
+        if(e.key === 'Enter') {
+            if(!dom.restartModal.classList.contains('hidden')) return;
+            dom.denyModal.classList.contains('hidden') ? finalize('approve') : finalize('deny');
+        }
+        if(e.key === 'Escape') { toggleDenyModal(false); toggleRestartModal(false); toggleInfoModal(false); }
+    });
+</script>
+</body>
+</html>
